@@ -11,13 +11,13 @@ The [Metanome](https://hpi.de/naumann/projects/data-profiling-and-analytics/meta
 
 To run our algorithm, you need to :
 
-- clone source code of AINDD
+- clone source code of AINDD and IncAINDD
 - ensure the following configuration
   - `Java 9 or later`
   - `Maven 3.1.0 or later`
-- package AINDD using `mvn package` , or you can directly use the jar file provided in `target` package
-- put `AINDD-1.0-SNAPSHOT.jar` under `Metanome/backend/WEB-INF/classes/algorithms`
-- run AINDD on Metanome
+- package AINDD and IncAINDD using `mvn package` , or you can directly use the jar file provided in `target` package
+- put `AINDD-1.0-SNAPSHOT.jar` and `IncAINDD-1.0-SNAPSHOT.jar` under `Metanome/backend/WEB-INF/classes/algorithms`
+- run AINDD or IncAINDD on Metanome
 
 
 When you run AINDD on the Metanome platform, you need to set:
@@ -28,12 +28,20 @@ When you run AINDD on the Metanome platform, you need to set:
 - `FILTER_SIZE` size of three-layer filter
 - `VIOLATE_PER_10000` violation threshold (per 10,000)
 - `DELETE_MODE` whether to use the delete semantics
+
+When running the incremental version, the following additional parameters need to be configured:
+
 - `SAVE2DISK_BATCH` The number of columns stored and processed in each batch during incremental updates.
 - `MICRO_PROBING_THRESHOLD`: The threshold for fine pruning in incremental updates, which we recommend setting it to 1000.
-
-
+- `DATA_INSERTION` whether data insertion occurs
+- `DATA_DELETION` whether data deletion occurs
 
 All of the above parameters are set via the Metanome front-end page.
+
+To correctly run the incremental algorithm, you need to :
+- select the original dataset, leave `DATA_INSERTION` and `DATA_DELETION` unchecked, and run the IncAINDD algorithm
+- copy the context information and the auxiliary structure folder `AINDD_temp` to `AINDD_temp2` after the execution is completed
+- input the datasets in the following order : the original dataset, deletion data (if any), and insertion data (if any). Enable the corresponding `DATA_INSERTION` and `DATA_DELETION` options, and run the IncAINDD algorithm
 
 
 You can learn more about usage of Metanome in [here](https://hpi.de/naumann/projects/data-profiling-and-analytics/metanome-data-profiling/algorithms.html)
@@ -43,7 +51,7 @@ You can learn more about usage of Metanome in [here](https://hpi.de/naumann/proj
 # Comparative Experiments
 The comparison algorithms used in Batch-Inc_AINDD experiments are [A-DeMarchi](https://github.com/A-IND/AINDD-Expt/tree/main/ComparisonAlgorithms/A-DeMarchi),[A-SPIDER](https://github.com/A-IND/AINDD-Expt/tree/main/ComparisonAlgorithms/A-SPIDER) and [BINDER](https://github.com/A-IND/AINDD-Expt/tree/main/ComparisonAlgorithms/BINDER).
 
-We provide the algorithm code and datasets required for the experiments in [here](https://github.com/A-IND/AINDD-Expt)
+We provide the algorithm code and datasets required for the experiments [here](https://github.com/A-IND/AINDD-Expt)
 
 
 
