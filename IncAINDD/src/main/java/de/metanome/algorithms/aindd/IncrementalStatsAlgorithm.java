@@ -13,6 +13,11 @@ import de.metanome.algorithm_integration.input.InputGenerationException;
 import de.metanome.algorithm_integration.input.InputIterationException;
 import de.metanome.algorithm_integration.input.RelationalInput;
 import de.metanome.algorithm_integration.input.RelationalInputGenerator;
+import java.io.*;
+import java.util.*;
+import de.metanome.algorithm_integration.input.*;
+import de.metanome.algorithm_integration.result_receiver.InclusionDependencyResultReceiver;
+import de.metanome.algorithms.aindd.structures.*;
 
 
 public class IncrementalStatsAlgorithm {
@@ -25,7 +30,7 @@ public class IncrementalStatsAlgorithm {
     protected int violate_per;
     protected int batchSize;
     protected int microProbingThreshold;
-
+    public InclusionDependencyResultReceiver resultReceiver = null;
     protected List<List<SplitThreeLayersFilter>> globalFilters = null;
     protected String tempFolderPath = "AINDD_temp2";
     protected boolean dataDeletion = false;
@@ -66,6 +71,14 @@ public class IncrementalStatsAlgorithm {
                             new ColumnPermutation(rightCol)
                     );
                     results.add(ind);
+
+                    if (this.resultReceiver != null) {
+                        try {
+                            this.resultReceiver.receiveResult(ind);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
             }
         }

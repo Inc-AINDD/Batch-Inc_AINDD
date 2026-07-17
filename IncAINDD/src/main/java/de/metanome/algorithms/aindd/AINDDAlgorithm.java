@@ -135,6 +135,7 @@ public class AINDDAlgorithm {
                 try {
                     IncrementalStatsAlgorithm incStats = new IncrementalStatsAlgorithm();
                     incStats.loadContextFromDisk("AINDD_temp2/aindd_context.ser");
+                    incStats.resultReceiver = this.resultReceiver;
                     incStats.dataDeletion = this.dataDeletion;
                     incStats.dataInsertion = this.dataInsertion;
                     incStats.execute(this.configuration);
@@ -181,9 +182,9 @@ public class AINDDAlgorithm {
                 try {
                     IncrementalStatsAlgorithmDeletion incStats = new IncrementalStatsAlgorithmDeletion();
                     incStats.loadContextFromDisk("AINDD_temp2/aindd_context.ser");
+                    incStats.resultReceiver = this.resultReceiver;
                     incStats.dataDeletion = this.dataDeletion;
                     incStats.dataInsertion = this.dataInsertion;
-
                     incStats.execute(this.configuration);
                 } catch (Exception e) {
                     throw new AlgorithmExecutionException("Incremental stats processing failed", e);

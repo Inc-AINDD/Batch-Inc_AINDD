@@ -31,7 +31,7 @@ When you run AINDD on the Metanome platform, you need to set:
 
 When running the incremental version, the following additional parameters need to be configured:
 
-- `SAVE2DISK_BATCH` The number of columns stored and processed in each batch during incremental updates.
+- `SAVE2DISK_BATCH`: The number of columns stored and processed in each batch during incremental updates, which we recommend setting to the number of columns in the dataset if sufficient memory is available.
 - `MICRO_PROBING_THRESHOLD`: The threshold for fine pruning in incremental updates, which we recommend setting it to 1000.
 - `DATA_INSERTION` whether data insertion occurs
 - `DATA_DELETION` whether data deletion occurs
@@ -41,22 +41,25 @@ All of the above parameters are set via the Metanome front-end page.
 To correctly run the incremental algorithm, you need to :
 - select the original dataset, leave `DATA_INSERTION` and `DATA_DELETION` unchecked, and run the IncAINDD algorithm
 - copy the context information and the auxiliary structure folder `AINDD_temp` to `AINDD_temp2` after the execution is completed
-- input the datasets in the following order : the original dataset, deletion data (if any), and insertion data (if any). Enable the corresponding `DATA_INSERTION` and `DATA_DELETION` options, and run the IncAINDD algorithm
+- input the datasets in the following order : the original dataset, deletion data (if any), and insertion data (if any). Enable the corresponding `DATA_INSERTION` (if any) and `DATA_DELETION` (if any) options, and run the IncAINDD algorithm
+- The updated context information and auxiliary structures are saved in `AINDD_temp2`.
+- If a comparison with the batch approach is required, use the incrementally updated data as input and run AINDD algorithm.
 
+To facilitate the evaluation of the IncAINDD algorithm, we provide some example datasets [here](https://github.com/Inc-AINDD/IncAINDD-Exp).
 
-You can learn more about usage of Metanome in [here](https://hpi.de/naumann/projects/data-profiling-and-analytics/metanome-data-profiling/algorithms.html)
+You can learn more about usage of Metanome [here](https://hpi.de/naumann/projects/data-profiling-and-analytics/metanome-data-profiling/algorithms.html).
 
 
 
 # Comparative Experiments
 The comparison algorithms used in Batch-Inc_AINDD experiments are [A-DeMarchi](https://github.com/A-IND/AINDD-Expt/tree/main/ComparisonAlgorithms/A-DeMarchi),[A-SPIDER](https://github.com/A-IND/AINDD-Expt/tree/main/ComparisonAlgorithms/A-SPIDER) and [BINDER](https://github.com/A-IND/AINDD-Expt/tree/main/ComparisonAlgorithms/BINDER).
 
-We provide the algorithm code and datasets required for the experiments [here](https://github.com/A-IND/AINDD-Expt)
+We provide the algorithm code and datasets required for the experiments [here](https://github.com/A-IND/AINDD-Expt).
 
 
 
 
 # License
 
-Batch-Inc_AINDD is released under the [Apache 2.0 license](https://github.com/Inc-AINDD/Batch-Inc_AINDD/blob/main/LICENSE). Some basic data structure's source code is imported from [BINDER](https://github.com/HPI-Information-Systems/metanome-algorithms/tree/master/BINDER)
+Batch-Inc_AINDD is released under the [Apache 2.0 license](https://github.com/Inc-AINDD/Batch-Inc_AINDD/blob/main/LICENSE). Some basic data structure's source code is imported from [BINDER](https://github.com/HPI-Information-Systems/metanome-algorithms/tree/master/BINDER).
 

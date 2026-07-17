@@ -1,5 +1,7 @@
 package de.metanome.algorithms.aindd;
 
+import java.io.*;
+import java.util.*;
 import de.metanome.algorithm_integration.AlgorithmConfigurationException;
 import de.metanome.algorithm_integration.AlgorithmExecutionException;
 import de.metanome.algorithm_integration.ColumnIdentifier;
@@ -8,12 +10,13 @@ import de.metanome.algorithm_integration.input.InputGenerationException;
 import de.metanome.algorithm_integration.input.InputIterationException;
 import de.metanome.algorithm_integration.input.RelationalInput;
 import de.metanome.algorithm_integration.input.RelationalInputGenerator;
+import de.metanome.algorithm_integration.result_receiver.InclusionDependencyResultReceiver;
 import de.metanome.algorithm_integration.results.InclusionDependency;
 import de.metanome.algorithms.aindd.config.Configuration;
 import de.uni_potsdam.utils.FileUtils;
+import de.metanome.algorithm_integration.input.*;
+import de.metanome.algorithms.aindd.structures.*;
 
-import java.io.*;
-import java.util.*;
 
 
 public class IncrementalStatsAlgorithmDeletion {
@@ -26,7 +29,7 @@ public class IncrementalStatsAlgorithmDeletion {
     protected int violate_per;
     protected int batchSize;
     protected int microProbingThreshold;
-
+    public InclusionDependencyResultReceiver resultReceiver = null;
     protected List<List<SplitThreeLayersFilter>> globalFilters = null;
     protected String tempFolderPath = "AINDD_temp2";
     protected boolean dataDeletion = false;
@@ -64,6 +67,14 @@ public class IncrementalStatsAlgorithmDeletion {
                     ColumnIdentifier rightCol = new ColumnIdentifier(this.tableNames[0], this.columnNames.get(j));
                     InclusionDependency ind = new InclusionDependency(new ColumnPermutation(leftCol), new ColumnPermutation(rightCol));
                     results.add(ind);
+
+                    if (this.resultReceiver != null) {
+                        try {
+                            this.resultReceiver.receiveResult(ind);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
             }
         }

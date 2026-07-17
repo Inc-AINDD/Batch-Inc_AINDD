@@ -65,9 +65,10 @@ public class AINDDAlgorithm {
 	protected Integer[] bucketInMemPerPart;
 
 	// things for deletion semantics
+    protected int[] rowCountOfColumn;
 	protected List<List<ThreeLayersFilterDelete>> filterDelete_list = null;
-	protected int[] rowCountOfTable;
-	protected int[] tableThreshold;
+//	protected int[] rowCountOfTable;
+//	protected int[] tableThreshold;
 	protected List<List<HashMap<String, Integer>>> partitions_delete = null;
 
 	public void execute(Configuration configuration) throws AlgorithmExecutionException, SQLException {
@@ -78,8 +79,10 @@ public class AINDDAlgorithm {
 
 		this.initializeCommon(tables);
 		if (!this.deleteMode) {
-			this.initializeInsertion(tables);
-			partitioningInsertion(tables);
+
+            this.initializeInsertion(tables);
+            this.partitioningInsertion(tables);
+
 			List<InclusionDependency> results;
 			try {
 				results = this.AINDDiscovery();
@@ -88,12 +91,13 @@ public class AINDDAlgorithm {
 			} catch (ClassNotFoundException e) {
 				throw new RuntimeException(e);
 			}
-			System.out.println("---- results : " + results.size() + " ----");
+
 			this.emit(results);
 		}else{
 			this.initializeDeletion(tables);
 			partitioningDeletion(tables);
 
+            long p2_start = System.nanoTime();
 			List<InclusionDependency> results;
 			try {
 				results = this.AINDDiscoveryDeletion();
@@ -102,8 +106,8 @@ public class AINDDAlgorithm {
 			} catch (ClassNotFoundException e) {
 				throw new RuntimeException(e);
 			}
-			System.out.println("result set size :" + results.size());
-			this.emit(results);
+
+            this.emit(results);
 		}
 	}
 
@@ -168,8 +172,8 @@ public class AINDDAlgorithm {
 		this.partitions_delete = new ArrayList<>();
 		this.filterDelete_list = new ArrayList<>();
 
-		this.rowCountOfTable = new int[tableNames.length];
-		this.tableThreshold = new int[tableNames.length];
+        this.rowCountOfColumn = new int[numColumns];
+        this.columnThreshold = new int[numColumns][2];
 	}
 
 
@@ -287,16 +291,16 @@ public class AINDDAlgorithm {
 			//read data files one by one
 
 			int numValuesSinceLastMemoryCheck = 0;
-			int rowCount = 0;
-			while(input.hasNext()) {
-				rowCount++;
-				List<String> values = input.next();
-				for(int columnNumber = 0; columnNumber < numTableColumns; ++columnNumber) {
-					String value = (String)values.get(columnNumber);
-					if(value==null){
-						continue;
-					}
-					int pNumber = this.calculatePartitionFor(value);
+            while(input.hasNext()) {
+                List<String> values = input.next();
+                for(int columnNumber = 0; columnNumber < numTableColumns; ++columnNumber) {
+                    String value = (String)values.get(columnNumber);
+                    if(value==null){
+                        continue;
+                    }
+
+                    this.rowCountOfColumn[startTableColumnIndex + columnNumber]++;
+                    int pNumber = this.calculatePartitionFor(value);
 					HashMap<String, Integer> map = partitions_delete.get(startTableColumnIndex + columnNumber).get(pNumber);
 					if (map.containsKey(value)){
 						map.put(value, map.get(value) + 1);
@@ -319,7 +323,7 @@ public class AINDDAlgorithm {
 					}
 				}
 			}
-			this.rowCountOfTable[tableIndex] = rowCount;
+
 			for (int columnNumber = 0; columnNumber < numTableColumns; ++columnNumber){
 				for (int partNumber = 0; partNumber < numPartitionsPerColumn; ++partNumber){
 					int size = this.partitions_delete.get(startTableColumnIndex + columnNumber).get(partNumber).size();
@@ -350,7 +354,7 @@ public class AINDDAlgorithm {
 					String colName = columnNames.get(colIndex);
 					HashSet set = (HashSet) ((List) partitions_list.get(colIndex)).get(partIndex);
 					updateBucketSizeRange(colIndex, partIndex, set.size());
-					diskBack.writePartition(colName, partIndex, set);
+                    diskBack.writePartition(colName, partIndex, set);
 					this.bucketInMemPerPart[partIndex] -= 1;
 					partitions_list.get(colIndex).set(partIndex, new HashSet<>());
 					this.partition_backed.get(colIndex).set(partIndex,true);
@@ -365,8 +369,8 @@ public class AINDDAlgorithm {
 				int partIndex = p.getPartitionID();
 				String colName = columnNames.get(colIndex);
 				System.out.println("write bucket to disk, column index  " + colIndex + " partition index :" + partIndex + "column name :"+colName);
-				diskBack.writePartition(colName,partIndex,(HashSet) ((List) partitions_list.get(colIndex)).get(partIndex));
-				this.bucketInMemPerPart[partIndex] -= 1;
+                diskBack.writePartition(colName,partIndex,(HashSet) ((List) partitions_list.get(colIndex)).get(partIndex));
+                this.bucketInMemPerPart[partIndex] -= 1;
 				partitions_list.get(colIndex).set(partIndex, new HashSet<>());
 				this.partition_backed.get(colIndex).set(partIndex,true);
 				this.isNotFullMem[colIndex] = true;
@@ -454,7 +458,7 @@ public class AINDDAlgorithm {
 				Set<String> bucketInMem = partitions_list.get(colNum).get(partitionNum);
 				Set<String> bucketOutMem = null;
 				if (partition_backed.get(colNum).get(partitionNum)){
-					bucketOutMem = diskBack.readPartition(columnNames.get(colNum),partitionNum);
+                    bucketOutMem = diskBack.readPartition(columnNames.get(colNum),partitionNum);
 					bucketInMem.addAll(bucketOutMem);
 				}
 				int bucketSize = bucketInMem.size();
@@ -462,7 +466,7 @@ public class AINDDAlgorithm {
 			}
 			for (int colNum = 0; colNum < numColumns; colNum++) {
 				Set<String> bucketInMem = partitions_list.get(colNum).get(partitionNum);
-				buildFilter(this.filterSize, this.columnNames.get(colNum),colNum, partitionNum, bucketInMem);
+                buildFilter(this.filterSize, this.columnNames.get(colNum),colNum, partitionNum, bucketInMem);
 			}
 			for (int colNum = 0; colNum < numColumns; colNum++) {
 				partitions_list.get(colNum).set(partitionNum, new HashSet<>());
@@ -577,10 +581,10 @@ public class AINDDAlgorithm {
 						}
 						if((l.getBloomNum()[k] - r.getBloomNum()[k]) > 0) {
 							count += (l.getBloomNum()[k] - r.getBloomNum()[k])*l.getBloomMinCount()[k];
-							if(count > tableThreshold[findTableIndex(i)]) break;
+							if(count > columnThreshold[i][1]) break;
 						}
 					}
-					if (count > tableThreshold[findTableIndex(i)]) {
+					if (count  > columnThreshold[i][1]) {
 						violationMatrix[i][j] = -1;
 						addLeftOrRightVio(i, j);
 						continue;
@@ -602,7 +606,7 @@ public class AINDDAlgorithm {
 
 		for (int i = 0; i < numColumns; i++) {
 			for (int j = 0; j < numColumns; j++) {
-				if (violationMatrix[i][j] == -1 || violationMatrix[i][j] > tableThreshold[findTableIndex(i)]) continue;
+				if (violationMatrix[i][j] == -1 || violationMatrix[i][j] > columnThreshold[i][1]) continue;
 				ColumnIdentifier l = new ColumnIdentifier(tableNames[findTableIndex(i)], columnNames.get(i));
 				ColumnPermutation lhs = new ColumnPermutation(l);
 				ColumnIdentifier r = new ColumnIdentifier(tableNames[findTableIndex(j)], columnNames.get(j));
@@ -614,12 +618,12 @@ public class AINDDAlgorithm {
 		return results;
 	}
 
-	private void computeVioBound(){
-		// calculate violation threshold for each table
-		for (int i = 0; i < tableNames.length; i++) {
-			this.tableThreshold[i] = (int)(this.rowCountOfTable[i] * (violate_per / 10000.0F));
-		}
-	}
+    private void computeVioBound(){
+        for (int i = 0; i < numColumns; i++) {
+            this.columnThreshold[i][1] = (int)(this.rowCountOfColumn[i] * (violate_per / 10000.0F));
+        }
+    }
+
 	private int findTableIndex(int colNum) {
 		// for a given column index, return table index that it belongs to
 		for (int i = 0; i < tableColumnStartIndexes.length - 1; i++) {
@@ -691,7 +695,7 @@ public class AINDDAlgorithm {
 					this.violationMatrix[leftCol][rightCol] +=left.get(index).get(s);
 				}
 			}
-			if (this.violationMatrix[leftCol][rightCol] > tableThreshold[findTableIndex(leftCol)]) {
+			if (this.violationMatrix[leftCol][rightCol] > columnThreshold[leftCol][1]) {
 				violationMatrix[leftCol][rightCol] = -1;
 				addLeftOrRightVio(leftCol, rightCol);
 				break;
