@@ -46,8 +46,12 @@ public class IncrementalStatsAlgorithm {
 
     public void execute(Configuration configuration) throws AlgorithmExecutionException {
         this.configuration = configuration;
-        this.initialize(configuration.getRelationalInputGenerators().get(0));
 
+        long t1_start = System.nanoTime();
+        this.initialize(configuration.getRelationalInputGenerators().get(0));
+        long timeContextLoadNs = System.nanoTime() - t1_start;
+
+        long t2_start = System.nanoTime();
         if(dataDeletion && dataInsertion) this.processBatchUpdates();
         else if (dataDeletion) this.processDeletionData();
         else this.processInsertionData();
@@ -83,9 +87,11 @@ public class IncrementalStatsAlgorithm {
             }
         }
 
+        long time_Algorithm = System.nanoTime()-t2_start;
         System.out.println("The number of AINDs: " + results.size());
 
         System.out.println("Updating context...");
+        long t_persist_start = System.nanoTime();
         try {
             String contextFilePath = this.tempFolderPath + File.separator + "aindd_context.ser";
             this.saveContextToDisk(contextFilePath);
@@ -99,6 +105,11 @@ public class IncrementalStatsAlgorithm {
         } catch (Exception e) {
             throw new AlgorithmExecutionException("Fail to update!", e);
         }
+        long timePersistNs = System.nanoTime() - t_persist_start;
+
+        System.out.println("  IncAINDD Algorithm runtime: " + String.format("%.4f", time_Algorithm / 1_000_000_000.0) + " s");
+        System.out.println("  Context restoration time  : " + String.format("%.4f", timeContextLoadNs / 1_000_000_000.0) + " s");
+        System.out.println("  Context Storage Time      : " + String.format("%.4f", timePersistNs / 1_000_000_000.0) + " s\n");
     }
 
     public void loadContextFromDisk(String contextFilePath) throws Exception {

@@ -45,6 +45,8 @@ To correctly run the incremental algorithm, you need to :
 - The updated context information and auxiliary structures are saved in `AINDD_temp2`.
 - If a comparison with the batch approach is required, use the incrementally updated data as input and run AINDD algorithm.
 
+Because Metanome cannot persist context in memory across multiple runs, the algorithm uses disk I/O to simulate this process. Metanome's default timer counts this simulative I/O overhead, which artificially inflates the total time. Since this overhead is entirely avoidable in practice, please check the Metanome console logs for the true algorithmic execution time.
+
 To facilitate the evaluation of the IncAINDD algorithm, we provide some example datasets [here](https://github.com/Inc-AINDD/IncAINDD-Exp).
 
 You can learn more about usage of Metanome [here](https://hpi.de/naumann/projects/data-profiling-and-analytics/metanome-data-profiling/algorithms.html).
