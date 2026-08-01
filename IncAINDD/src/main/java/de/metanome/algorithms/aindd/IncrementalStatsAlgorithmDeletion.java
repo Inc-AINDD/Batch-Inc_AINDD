@@ -43,12 +43,13 @@ public class IncrementalStatsAlgorithmDeletion {
     protected long[] thresholds;
     protected long[][] totalVioMatrix;
     protected int[] rowCountOfColumn;
+    protected byte[][][] loadedLayer1 = null;
+    protected int[][][] loadedLayer2 = null;
+    protected int[][][] loadedLayer2MinFreqs = null;
 
     public void execute(Configuration configuration) throws AlgorithmExecutionException {
         this.configuration = configuration;
-        long t1_start = System.nanoTime();
         this.initialize(configuration.getRelationalInputGenerators().get(0));
-        long timeContextLoadNs = System.nanoTime() - t1_start;
 
         long t2_start = System.nanoTime();
         if(dataDeletion && dataInsertion) this.processBatchUpdates();
@@ -78,7 +79,7 @@ public class IncrementalStatsAlgorithmDeletion {
                             e.printStackTrace();
                         }
                     }
-                }
+                } 
             }
         }
 
@@ -86,25 +87,15 @@ public class IncrementalStatsAlgorithmDeletion {
         System.out.println("The number of AINDs: " + results.size());
 
         System.out.println("Updating context...");
-        long t_persist_start = System.nanoTime();
         try {
             String contextFilePath = this.tempFolderPath + File.separator + "aindd_context.ser";
             this.saveContextToDisk(contextFilePath);
-
-            for (int i = 0; i < numColumns; i++) {
-                for (int p = 0; p < numPartitionsPerColumn; p++) {
-                    this.globalFilters.get(i).get(p).saveLayersToDisk();
-                }
-            }
             System.out.println("Successfully updated context!");
         } catch (Exception e) {
             throw new AlgorithmExecutionException("Fail to update!", e);
         }
-        long timePersistNs = System.nanoTime() - t_persist_start;
 
         System.out.println("  IncAINDD Algorithm runtime: " + String.format("%.4f", time_Algorithm / 1_000_000_000.0) + " s");
-        System.out.println("  Context restoration time  : " + String.format("%.4f", timeContextLoadNs / 1_000_000_000.0) + " s");
-        System.out.println("  Context Storage Time      : " + String.format("%.4f", timePersistNs / 1_000_000_000.0) + " s\n");
     }
 
     public void loadContextFromDisk(String contextFilePath) throws Exception {
@@ -121,6 +112,9 @@ public class IncrementalStatsAlgorithmDeletion {
             this.thresholds = (long[]) ois.readObject();
             this.rowCountOfColumn = (int[]) ois.readObject();
             this.microProbingThreshold = ois.readInt();
+            this.loadedLayer1 = (byte[][][]) ois.readObject();
+            this.loadedLayer2 = (int[][][]) ois.readObject();
+            this.loadedLayer2MinFreqs = (int[][][]) ois.readObject();
         }
     }
 
@@ -138,6 +132,21 @@ public class IncrementalStatsAlgorithmDeletion {
             oos.writeObject(this.thresholds);
             oos.writeObject(this.rowCountOfColumn);
             oos.writeInt(this.microProbingThreshold);
+            byte[][][] allLayer1 = new byte[numColumns][numPartitionsPerColumn][];
+            int[][][] allLayer2 = new int[numColumns][numPartitionsPerColumn][];
+            int[][][] allLayer2MinFreqs = new int[numColumns][numPartitionsPerColumn][];
+
+            for (int i = 0; i < numColumns; i++) {
+                for (int p = 0; p < numPartitionsPerColumn; p++) {
+                    SplitThreeLayersFilter f = globalFilters.get(i).get(p);
+                    allLayer1[i][p] = f.getLayer1().toByteArray();
+                    allLayer2[i][p] = f.getLayer2();
+                    allLayer2MinFreqs[i][p] = f.getLayer2MinFreqs();
+                }
+            }
+            oos.writeObject(allLayer1);
+            oos.writeObject(allLayer2);
+            oos.writeObject(allLayer2MinFreqs);
         }
     }
 
@@ -174,10 +183,17 @@ public class IncrementalStatsAlgorithmDeletion {
                 String safeColName = buildSafeColumnName(columnNames.get(i), i);
                 String layer3Path = this.tempFolderPath + File.separator + safeColName + "_" + p;
 
-                partitions.add(new SplitThreeLayersFilter(filtersize, layer3Path));
+                byte[] l1Bytes = (this.loadedLayer1 != null) ? this.loadedLayer1[i][p] : null;
+                int[] l2Counts = (this.loadedLayer2 != null) ? this.loadedLayer2[i][p] : null;
+                int[] l2MinFreqs = (this.loadedLayer2MinFreqs != null) ? this.loadedLayer2MinFreqs[i][p] : null;
+
+                partitions.add(new SplitThreeLayersFilter(filtersize, layer3Path, l1Bytes, l2Counts, l2MinFreqs));
             }
             globalFilters.add(partitions);
         }
+        this.loadedLayer1 = null;
+        this.loadedLayer2 = null;
+        this.loadedLayer2MinFreqs = null;
     }
 
     private void processBatchUpdates() throws AlgorithmExecutionException {
@@ -830,47 +846,25 @@ public class IncrementalStatsAlgorithmDeletion {
             return layer3_DiskPath;
         }
 
-        public SplitThreeLayersFilter(int filterSize, String diskPath) {
+        public SplitThreeLayersFilter(int filterSize, String diskPath, byte[] l1Bytes, int[] l2Counts, int[] l2MinFreqs) {
             this.filterSize = filterSize;
             this.layer3_DiskPath = diskPath;
-            this.layer1_BitSet = new BitSet(filterSize);
-            this.layer2_Counts = new int[filterSize];
 
-            String layersFilePath = diskPath + "_layers.dat";
-            // System.out.println("DEBUG: Attempting to load layers from: " +
-            // layersFilePath);
-            File layersFile = new File(layersFilePath);
-            if (layersFile.exists()) {
-                try (DataInputStream dis = new DataInputStream(new FileInputStream(layersFile))) {
-                    int bitSetLen = dis.readInt();
-                    byte[] bitSetBytes = new byte[bitSetLen];
-                    dis.readFully(bitSetBytes);
-                    this.layer1_BitSet = BitSet.valueOf(bitSetBytes);
+            // 1. Layer 1
+            this.layer1_BitSet = (l1Bytes != null && l1Bytes.length > 0) ? BitSet.valueOf(l1Bytes) : new BitSet(filterSize);
 
-                    int arrayLen = dis.readInt();
-                    this.layer2_Counts = new int[arrayLen];
-                    for (int i = 0; i < arrayLen; i++) {
-                        this.layer2_Counts[i] = dis.readInt();
-                    }
-
-                    this.layer2_MinFreqs = new int[arrayLen];
-                    if (dis.available() > 0) {
-                        int minFreqLen = dis.readInt();
-                        for (int i = 0; i < minFreqLen; i++) {
-                            this.layer2_MinFreqs[i] = dis.readInt();
-                        }
-                    } else {
-                        Arrays.fill(this.layer2_MinFreqs, 0);
-                    }
-                    // System.out.println("DEBUG: Loaded count array, length=" + arrayLen + ", first
-                    // few: " +
-                    // (arrayLen > 0 ? layer2_Counts[0] + ", " + (arrayLen > 1 ? layer2_Counts[1] :
-                    // "") : ""));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+            // 2. Layer 2 Counts
+            if (l2Counts != null && l2Counts.length > 0) {
+                this.layer2_Counts = l2Counts;
             } else {
-                System.out.println("DEBUG: Layers file not found: " + layersFilePath + ", starting with empty filter.");
+                this.layer2_Counts = new int[filterSize];
+            }
+
+            // 3. Layer 2 MinFreqs
+            if (l2MinFreqs != null && l2MinFreqs.length > 0) {
+                this.layer2_MinFreqs = l2MinFreqs;
+            } else {
+                this.layer2_MinFreqs = new int[filterSize];
             }
         }
 
@@ -1029,29 +1023,6 @@ public class IncrementalStatsAlgorithmDeletion {
 
             if (oldFile.delete()) tempFile.renameTo(oldFile);
             return new int[]{disappearedFreq, addedFreq};
-        }
-
-        public void saveLayersToDisk() {
-            String layersFilePath = this.layer3_DiskPath + "_layers.dat";
-            try (DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(layersFilePath)))) {
-
-                byte[] bitSetBytes = this.layer1_BitSet.toByteArray();
-                dos.writeInt(bitSetBytes.length);
-                dos.write(bitSetBytes);
-
-                dos.writeInt(this.layer2_Counts.length);
-                for (int count : this.layer2_Counts) {
-                    dos.writeInt(count);
-                }
-
-                dos.writeInt(this.layer2_MinFreqs.length);
-                for (int minFreq : this.layer2_MinFreqs) {
-                    dos.writeInt(minFreq);
-                }
-            } catch (IOException e) {
-                System.err.println("Fail to save Layers to Disk: " + layersFilePath);
-                e.printStackTrace();
-            }
         }
 
         private void writeBinaryBucket(DataOutputStream dos, int h, Map<String, Integer> valMap, long[] ioTracker) throws IOException {

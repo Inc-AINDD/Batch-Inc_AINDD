@@ -70,6 +70,10 @@ public class AINDDAlgorithm {
     protected int[][] matrec;
     protected long[][] totalVioMatrix;
 
+    protected byte[][][] globalLayer1;
+    protected int[][][] globalLayer2;
+    protected int[][][] globalLayer2MinFreq;
+
     // things for deletion semantics
     protected List<List<ThreeLayersFilterDelete>> filterDelete_list = null;
     protected int[] rowCountOfColumn;
@@ -215,6 +219,12 @@ public class AINDDAlgorithm {
                 oos.writeObject(this.rowCountOfColumn);
             }
             oos.writeInt(this.microProbingThreshold);
+
+            oos.writeObject(this.globalLayer1);
+            oos.writeObject(this.globalLayer2);
+            if (isDeletionMode) {
+                oos.writeObject(this.globalLayer2MinFreq);
+            }
 
             System.out.println("【Success】Save to: " + contextFilePath);
         } catch (IOException e) {
@@ -502,6 +512,8 @@ public class AINDDAlgorithm {
     }
 
     public void rebuildLayer3(List<TableInfo> tables) throws Exception {
+        this.globalLayer1 = new byte[numColumns][numPartitionsPerColumn][];
+        this.globalLayer2 = new int[numColumns][numPartitionsPerColumn][];
         final int COLUMNS_PER_BATCH = save2disk_batch;
         System.out.println("Save the filters, COLUMNS_PER_BATCH: " + COLUMNS_PER_BATCH);
 
@@ -566,19 +578,8 @@ public class AINDDAlgorithm {
                             }
                         }
 
-                        String layersFilePath = tempFolderPath + File.separator + safeColName + "_" + pID + "_layers.dat";
-                        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(layersFilePath))) {
-                            byte[] bitSetBytes = bloomSet.toByteArray();
-                            dos.writeInt(bitSetBytes.length);
-                            dos.write(bitSetBytes);
-
-                            dos.writeInt(bloomNum.length);
-                            for (int count : bloomNum) {
-                                dos.writeInt(count);
-                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
+                        this.globalLayer1[globalColIdx][pID] = bloomSet.toByteArray();
+                        this.globalLayer2[globalColIdx][pID] = bloomNum;
 
                         String layer3FilePath = tempFolderPath + File.separator + safeColName + "_" + pID;
                         try (DataOutputStream dos3 = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(layer3FilePath)))) {
@@ -609,6 +610,9 @@ public class AINDDAlgorithm {
     }
 
     public void rebuildLayer3Deletion(List<TableInfo> tables) throws Exception {
+        this.globalLayer1 = new byte[numColumns][numPartitionsPerColumn][];
+        this.globalLayer2 = new int[numColumns][numPartitionsPerColumn][];
+        this.globalLayer2MinFreq = new int[numColumns][numPartitionsPerColumn][];
         final int COLUMNS_PER_BATCH = save2disk_batch;
         System.out.println("Save the filters, COLUMNS_PER_BATCH: " + COLUMNS_PER_BATCH);
 
@@ -683,24 +687,9 @@ public class AINDDAlgorithm {
                             }
                         }
 
-                        String layersFilePath = tempFolderPath + File.separator + safeColName + "_" + pID + "_layers.dat";
-                        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(layersFilePath))) {
-                            byte[] bitSetBytes = bloomSet.toByteArray();
-                            dos.writeInt(bitSetBytes.length);
-                            dos.write(bitSetBytes);
-
-                            dos.writeInt(bloomNum.length);
-                            for (int count : bloomNum) {
-                                dos.writeInt(count);
-                            }
-
-                            dos.writeInt(bloomMinFreq.length);
-                            for (int minFreq : bloomMinFreq) {
-                                dos.writeInt(minFreq);
-                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
+                        this.globalLayer1[globalColIdx][pID] = bloomSet.toByteArray();
+                        this.globalLayer2[globalColIdx][pID] = bloomNum;
+                        this.globalLayer2MinFreq[globalColIdx][pID] = bloomMinFreq;
 
                         String layer3FilePath = tempFolderPath + File.separator + safeColName + "_" + pID;
                         try (DataOutputStream dos3 = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(layer3FilePath)))) {

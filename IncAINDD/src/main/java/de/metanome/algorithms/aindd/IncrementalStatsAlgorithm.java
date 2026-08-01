@@ -43,13 +43,14 @@ public class IncrementalStatsAlgorithm {
     protected List<Set<String>> deletedValuesList = new ArrayList<>();
     protected long[] thresholds;
     protected long[][] totalVioMatrix;
+    protected byte[][][] loadedLayer1 = null;
+    protected int[][][] loadedLayer2 = null;
 
     public void execute(Configuration configuration) throws AlgorithmExecutionException {
         this.configuration = configuration;
 
-        long t1_start = System.nanoTime();
         this.initialize(configuration.getRelationalInputGenerators().get(0));
-        long timeContextLoadNs = System.nanoTime() - t1_start;
+
 
         long t2_start = System.nanoTime();
         if(dataDeletion && dataInsertion) this.processBatchUpdates();
@@ -91,25 +92,15 @@ public class IncrementalStatsAlgorithm {
         System.out.println("The number of AINDs: " + results.size());
 
         System.out.println("Updating context...");
-        long t_persist_start = System.nanoTime();
         try {
             String contextFilePath = this.tempFolderPath + File.separator + "aindd_context.ser";
             this.saveContextToDisk(contextFilePath);
-
-            for (int i = 0; i < numColumns; i++) {
-                for (int p = 0; p < numPartitionsPerColumn; p++) {
-                    this.globalFilters.get(i).get(p).saveLayersToDisk();
-                }
-            }
             System.out.println("Successfully updated context!");
         } catch (Exception e) {
             throw new AlgorithmExecutionException("Fail to update!", e);
         }
-        long timePersistNs = System.nanoTime() - t_persist_start;
 
         System.out.println("  IncAINDD Algorithm runtime: " + String.format("%.4f", time_Algorithm / 1_000_000_000.0) + " s");
-        System.out.println("  Context restoration time  : " + String.format("%.4f", timeContextLoadNs / 1_000_000_000.0) + " s");
-        System.out.println("  Context Storage Time      : " + String.format("%.4f", timePersistNs / 1_000_000_000.0) + " s\n");
     }
 
     public void loadContextFromDisk(String contextFilePath) throws Exception {
@@ -125,6 +116,8 @@ public class IncrementalStatsAlgorithm {
             this.batchSize = ois.readInt();
             this.thresholds = (long[]) ois.readObject();
             this.microProbingThreshold = ois.readInt();
+            this.loadedLayer1 = (byte[][][]) ois.readObject();
+            this.loadedLayer2 = (int[][][]) ois.readObject();
         }
     }
 
@@ -141,6 +134,18 @@ public class IncrementalStatsAlgorithm {
             oos.writeInt(this.batchSize);
             oos.writeObject(this.thresholds);
             oos.writeInt(this.microProbingThreshold);
+            byte[][][] allLayer1 = new byte[numColumns][numPartitionsPerColumn][];
+            int[][][] allLayer2 = new int[numColumns][numPartitionsPerColumn][];
+
+            for (int i = 0; i < numColumns; i++) {
+                for (int p = 0; p < numPartitionsPerColumn; p++) {
+                    SplitThreeLayersFilter f = globalFilters.get(i).get(p);
+                    allLayer1[i][p] = f.getLayer1().toByteArray();
+                    allLayer2[i][p] = f.getLayer2();
+                }
+            }
+            oos.writeObject(allLayer1);
+            oos.writeObject(allLayer2);
         }
     }
 
@@ -177,10 +182,14 @@ public class IncrementalStatsAlgorithm {
                 String safeColName = buildSafeColumnName(columnNames.get(i), i);
                 String layer3Path = this.tempFolderPath + File.separator + safeColName + "_" + p;
 
-                partitions.add(new SplitThreeLayersFilter(filtersize, layer3Path));
+                byte[] l1Bytes = (this.loadedLayer1 != null) ? this.loadedLayer1[i][p] : null;
+                int[] l2Counts = (this.loadedLayer2 != null) ? this.loadedLayer2[i][p] : null;
+                partitions.add(new SplitThreeLayersFilter(filtersize, layer3Path, l1Bytes, l2Counts));
             }
             globalFilters.add(partitions);
         }
+        this.loadedLayer1 = null;
+        this.loadedLayer2 = null;
     }
 
     private void processBatchUpdates() throws AlgorithmExecutionException {
@@ -896,42 +905,23 @@ public class IncrementalStatsAlgorithm {
             return layer3_DiskPath;
         }
 
-        public SplitThreeLayersFilter(int filterSize, String diskPath) {
+        public SplitThreeLayersFilter(int filterSize, String diskPath, byte[] l1Bytes, int[] l2Counts) {
             this.filterSize = filterSize;
             this.layer3_DiskPath = diskPath;
-            this.layer1_BitSet = new BitSet(filterSize);
-            this.layer2_Counts = new int[filterSize];
 
-            String layersFilePath = diskPath + "_layers.dat";
-            // System.out.println("DEBUG: Attempting to load layers from: " +
-            // layersFilePath);
-            File layersFile = new File(layersFilePath);
-            if (layersFile.exists()) {
-                try (DataInputStream dis = new DataInputStream(new FileInputStream(layersFile))) {
-                    int bitSetLen = dis.readInt();
-                    byte[] bitSetBytes = new byte[bitSetLen];
-                    dis.readFully(bitSetBytes);
-                    this.layer1_BitSet = BitSet.valueOf(bitSetBytes);
-                    // System.out.println("DEBUG: Loaded BitSet, length=" + bitSetLen + ",
-                    // cardinality="
-                    // + layer1_BitSet.cardinality());
+            // Layer 1
+            this.layer1_BitSet = (l1Bytes != null && l1Bytes.length > 0) ? BitSet.valueOf(l1Bytes) : new BitSet(filterSize);
 
-                    int arrayLen = dis.readInt();
-                    this.layer2_Counts = new int[arrayLen];
-                    this.totalDistinctCount = 0;
-                    for (int i = 0; i < arrayLen; i++) {
-                        this.layer2_Counts[i] = dis.readInt();
-                        this.totalDistinctCount += this.layer2_Counts[i];
-                    }
-                    // System.out.println("DEBUG: Loaded count array, length=" + arrayLen + ", first
-                    // few: " +
-                    // (arrayLen > 0 ? layer2_Counts[0] + ", " + (arrayLen > 1 ? layer2_Counts[1] :
-                    // "") : ""));
-                } catch (IOException e) {
-                    e.printStackTrace();
+            // Layer 2
+            if (l2Counts != null && l2Counts.length > 0) {
+                this.layer2_Counts = l2Counts;
+                this.totalDistinctCount = 0;
+                for (int count : l2Counts) {
+                    this.totalDistinctCount += count;
                 }
             } else {
-                System.out.println("DEBUG: Layers file not found: " + layersFilePath + ", starting with empty filter.");
+                this.layer2_Counts = new int[filterSize];
+                this.totalDistinctCount = 0;
             }
         }
 
@@ -939,14 +929,6 @@ public class IncrementalStatsAlgorithm {
             return this.totalDistinctCount;
         }
 
-        private boolean isNumeric(String str) {
-            for (int i = 0; i < str.length(); i++) {
-                if (!Character.isDigit(str.charAt(i))) {
-                    return false;
-                }
-            }
-            return true;
-        }
 
         public int[] updateBatch(Map<String, int[]> delMap, Map<String, int[]> insMap, long[] ioTracker, Set<String> collectedDel, Set<String> collectedIns) throws IOException {
             int disappearedCount = 0;
@@ -1067,23 +1049,6 @@ public class IncrementalStatsAlgorithm {
             if (oldFile.delete()) tempFile.renameTo(oldFile);
             this.totalDistinctCount = this.totalDistinctCount - disappearedCount + addedCount;
             return new int[]{disappearedCount, addedCount};
-        }
-
-        public void saveLayersToDisk() {
-            String layersFilePath = this.layer3_DiskPath + "_layers.dat";
-            try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(layersFilePath))) {
-                byte[] bitSetBytes = this.layer1_BitSet.toByteArray();
-                dos.writeInt(bitSetBytes.length);
-                dos.write(bitSetBytes);
-
-                dos.writeInt(this.layer2_Counts.length);
-                for (int count : this.layer2_Counts) {
-                    dos.writeInt(count);
-                }
-            } catch (IOException e) {
-                System.err.println("Fail to save Layers to Disk: " + layersFilePath);
-                e.printStackTrace();
-            }
         }
 
         private void writeBinaryBucket(DataOutputStream dos, int h, Map<String, Integer> valMap, long[] ioTracker) throws IOException {
