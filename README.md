@@ -45,6 +45,8 @@ To correctly run the incremental algorithm, you need to :
 - The updated context information and auxiliary structures are saved in `AINDD_temp2`.
 - If a comparison with the batch approach is required, use the incrementally updated data as input and run AINDD algorithm.
 
+The dataset selection order in the Metanome frontend is the reverse of the actual input order. For example, if the intended input order is the original dataset → insertion data → deletion data, you should select the datasets in the Metanome interface in the following order: deletion data → insertion data → the original dataset.
+
 To facilitate the evaluation of the IncAINDD algorithm, we provide some example datasets [here](https://github.com/Inc-AINDD/IncAINDD-Exp).
 
 You can learn more about usage of Metanome [here](https://hpi.de/naumann/projects/data-profiling-and-analytics/metanome-data-profiling/algorithms.html).
